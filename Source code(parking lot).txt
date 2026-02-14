@@ -1,0 +1,280 @@
+import javax.swing.*;
+import java.awt.*;
+import java.util.*;
+
+public class Bankers extends JFrame {
+    private static final int TOTAL_SLOTS = 10;
+    private static final int MAX_RESOURCES = 1;
+
+    private int[] available;
+    private int[][] max;
+    private int[][] allocation;
+    private int[][] need;
+
+    private JTextArea statusArea;
+    private JPanel[] slots = new JPanel[TOTAL_SLOTS];
+    private JLabel[] carLabels = new JLabel[TOTAL_SLOTS];
+    private Map<Integer, Integer> carToSlot = new HashMap<>();
+    private Set<Integer> usedCarIDs = new HashSet<>();
+
+    private CardLayout cardLayout;
+    private JPanel mainPanel;
+
+    public Bankers() {
+        setTitle("Public Parking Lot - Banker's Algorithm");
+        setSize(800, 600);
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+
+        cardLayout = new CardLayout();
+        mainPanel = new JPanel(cardLayout);
+
+        // Load background image
+        ImageIcon backgroundIcon = new ImageIcon("C:/Users/aaksh/Downloads/par4.jpg"); // <-- Replace with your image path
+        JLabel backgroundLabel = new JLabel(backgroundIcon);
+        backgroundLabel.setLayout(null);
+        backgroundLabel.setBounds(0, 0, 800, 600);
+
+        JPanel parkingPanel = new JPanel(null) {
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                g.drawImage(backgroundIcon.getImage(), 0, 0, getWidth(), getHeight(), this);
+            }
+        };
+        parkingPanel.setOpaque(false);
+
+        available = new int[]{TOTAL_SLOTS};
+        max = new int[TOTAL_SLOTS][1];
+        allocation = new int[TOTAL_SLOTS][1];
+        need = new int[TOTAL_SLOTS][1];
+
+        for (int i = 0; i < TOTAL_SLOTS; i++) {
+            max[i][0] = MAX_RESOURCES;
+            need[i][0] = MAX_RESOURCES;
+        }
+
+        Font font = new Font("Segoe UI", Font.PLAIN, 16);
+
+        JLabel header = new JLabel("  Smart Parking System");
+        header.setFont(new Font("Segoe UI", Font.BOLD, 26));
+        header.setBounds(200, 10, 400, 40);
+        parkingPanel.add(header);
+        header.setForeground(Color.ORANGE);
+        JButton enterBtn = createStyledButton("Car In", new Color(56, 142, 60));
+        enterBtn.setBounds(200, 70, 150, 40);
+        parkingPanel.add(enterBtn);
+
+        JButton exitBtn = createStyledButton("Car Out", new Color(211, 47, 47));
+        exitBtn.setBounds(400, 70, 150, 40);
+        parkingPanel.add(exitBtn);
+
+        JTextField exitField = new JTextField(10);
+        exitField.setBounds(600, 70, 100, 40);
+        parkingPanel.add(exitField);
+
+        statusArea = new JTextArea();
+        statusArea.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        statusArea.setEditable(false);
+        statusArea.setBackground(new Color(255, 255, 255, 200));
+        statusArea.setBorder(BorderFactory.createLineBorder(Color.GRAY, 1));
+        JScrollPane scrollPane = new JScrollPane(statusArea);
+        scrollPane.setBounds(50, 420, 700, 120);
+        scrollPane.setBorder(BorderFactory.createTitledBorder("Parking Status"));
+        parkingPanel.add(scrollPane);
+
+        JPanel lotPanel = new JPanel();
+        lotPanel.setBounds(50, 140, 700, 250);
+        lotPanel.setLayout(new GridLayout(2, 5, 10, 10));
+        lotPanel.setOpaque(false);
+        parkingPanel.add(lotPanel);
+
+        for (int i = 0; i < TOTAL_SLOTS; i++) {
+            JPanel slotPanel = new JPanel();
+            slotPanel.setLayout(new BorderLayout());
+            slotPanel.setBackground(Color.GREEN);
+            slotPanel.setBorder(BorderFactory.createLineBorder(Color.YELLOW, 3));
+            JLabel slotLabel = new JLabel("Slot " + (i + 1), JLabel.CENTER);
+            slotLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            slotLabel.setForeground(Color.BLACK);
+
+            carLabels[i] = new JLabel("", JLabel.CENTER);
+            carLabels[i].setFont(new Font("Segoe UI", Font.BOLD, 14));
+            carLabels[i].setForeground(Color.WHITE);
+
+            slotPanel.add(slotLabel, BorderLayout.NORTH);
+            slotPanel.add(carLabels[i], BorderLayout.CENTER);
+
+            slots[i] = slotPanel;
+            lotPanel.add(slots[i]);
+        }
+
+        enterBtn.addActionListener(e -> new Thread(this::carIn).start());
+        exitBtn.addActionListener(e -> new Thread(() -> carOut(exitField.getText())).start());
+
+        mainPanel.add(parkingPanel, "Parking");
+        add(mainPanel);
+
+        updateStatus();
+        setVisible(true);
+    }
+
+    private JButton createStyledButton(String text, Color bgColor) {
+        JButton btn = new JButton(text);
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btn.setForeground(Color.WHITE);
+        btn.setBackground(bgColor);
+        btn.setFocusPainted(false);
+        btn.setBorder(BorderFactory.createEmptyBorder());
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        return btn;
+    }
+
+    private synchronized void carIn() {
+        if (available[0] == 0) {
+            showMessage("Parking full.");
+            return;
+        }
+
+        Random rand = new Random();
+        int carIndex = -1;
+        int attempts = 0;
+
+        do {
+            carIndex = rand.nextInt(1000); // Unique car ID
+            attempts++;
+            if (attempts > 1000) {
+                showMessage("Unable to generate unique car ID.");
+                return;
+            }
+        } while (usedCarIDs.contains(carIndex));
+
+        int[] request = new int[]{1};
+
+        if (isSafeState(carIndex, request)) {
+            int slotNumber = findAvailableSlot();
+            if (slotNumber != -1) {
+                allocation[slotNumber][0] = 1;
+                need[slotNumber][0] = 0;
+                available[0]--;
+                carToSlot.put(carIndex, slotNumber);
+                usedCarIDs.add(carIndex);
+                updateStatus();
+                displayUniqueCode(carIndex, slotNumber);
+            } else {
+                showMessage("No available slots.");
+            }
+        } else {
+            showMessage("Request denied: Unsafe state.");
+        }
+    }
+
+    private synchronized void carOut(String carIDStr) {
+        try {
+            int carID = Integer.parseInt(carIDStr);
+            if (carToSlot.containsKey(carID)) {
+                int slotNumber = carToSlot.remove(carID);
+                allocation[slotNumber][0] = 0;
+                need[slotNumber][0] = MAX_RESOURCES;
+                available[0]++;
+                usedCarIDs.remove(carID);
+                updateStatus();
+                showMessage("Car " + carID + " removed from slot " + (slotNumber + 1));
+            } else {
+                showMessage("Invalid car ID.");
+            }
+        } catch (NumberFormatException e) {
+            showMessage("Invalid input.");
+        }
+    }
+
+    private boolean isSafeState(int carIndex, int[] request) {
+        if (request[0] > MAX_RESOURCES || request[0] > available[0]) {
+            return false;
+        }
+
+        int[] tempAvailable = available.clone();
+        int[][] tempAllocation = new int[TOTAL_SLOTS][1];
+        int[][] tempNeed = new int[TOTAL_SLOTS][1];
+
+        for (int i = 0; i < TOTAL_SLOTS; i++) {
+            tempAllocation[i][0] = allocation[i][0];
+            tempNeed[i][0] = need[i][0];
+        }
+
+        tempAvailable[0] -= request[0];
+
+        boolean[] finish = new boolean[TOTAL_SLOTS];
+        int[] work = tempAvailable.clone();
+        ArrayList<Integer> safeSequence = new ArrayList<>();
+
+        while (safeSequence.size() < TOTAL_SLOTS) {
+            boolean found = false;
+            for (int i = 0; i < TOTAL_SLOTS; i++) {
+                if (!finish[i] && tempNeed[i][0] <= work[0]) {
+                    work[0] += tempAllocation[i][0];
+                    finish[i] = true;
+                    safeSequence.add(i);
+                    found = true;
+                }
+            }
+            if (!found) return false;
+        }
+
+        return true;
+    }
+
+    private int findAvailableSlot() {
+        for (int i = 0; i < TOTAL_SLOTS; i++) {
+            boolean isOccupied = false;
+            for (Map.Entry<Integer, Integer> entry : carToSlot.entrySet()) {
+                if (entry.getValue() == i) {
+                    isOccupied = true;
+                    break;
+                }
+            }
+            if (!isOccupied) return i;
+        }
+        return -1;
+    }
+
+    private void updateStatus() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Total Slots: ").append(TOTAL_SLOTS).append("\n");
+        sb.append("Available Slots: ").append(available[0]).append("\n");
+        sb.append("----------------------------\n");
+        sb.append("Parked Cars:\n");
+
+        if (carToSlot.isEmpty()) {
+            sb.append("No cars parked.\n");
+        } else {
+            for (Map.Entry<Integer, Integer> entry : carToSlot.entrySet()) {
+                sb.append("Vehicle ID: ").append(entry.getKey()).append(" in Slot: ").append(entry.getValue() + 1).append("\n");
+            }
+        }
+
+        statusArea.setText(sb.toString());
+
+        for (int i = 0; i < TOTAL_SLOTS; i++) {
+            slots[i].setBackground(Color.GREEN);
+            carLabels[i].setText("");
+        }
+
+        for (Map.Entry<Integer, Integer> entry : carToSlot.entrySet()) {
+            int slotNumber = entry.getValue();
+            slots[slotNumber].setBackground(Color.RED);
+            carLabels[slotNumber].setText("Car " + entry.getKey());
+        }
+    }
+
+    private void displayUniqueCode(int carID, int slotNumber) {
+        showMessage("Vehicle ID: " + carID + " entered in slot " + (slotNumber + 1));
+    }
+
+    private void showMessage(String message) {
+        JOptionPane.showMessageDialog(this, message, "Information", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(Bankers::new);
+    }
+}
